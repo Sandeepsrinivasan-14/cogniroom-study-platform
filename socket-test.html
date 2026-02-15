@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Socket.IO Test</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  </head>
+  <body>
+    <h1>Socket.IO Test</h1>
+    <pre id="log"></pre>
+    <script>
+      const log = (msg) => {
+        console.log(msg);
+        document.getElementById("log").textContent += msg + "\n";
+      };
+
+      const ROOM_ID = "2"; // <-- put your real room.id here
+
+      const socket = io("http://localhost:8000", {
+        transports: ["websocket"]
+      });
+
+      socket.on("connect", () => {
+        log("Connected: " + socket.id);
+        socket.emit("join_room", { room_id: ROOM_ID });
+        socket.emit("chat_message", { message: "Hello from browser client" });
+      });
+
+      socket.on("system_message", (data) => {
+        log("System: " + JSON.stringify(data));
+      });
+
+      socket.on("chat_message", (data) => {
+        log("Chat: " + JSON.stringify(data));
+      });
+
+      socket.on("disconnect", () => {
+        log("Disconnected");
+      });
+    </script>
+  </body>
+</html>
