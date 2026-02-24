@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CogniRoom Developer Dashboard</title>
+    <style>
+        body { font-family: Arial; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: auto; }
+        .card { background: white; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .endpoint { border-left: 4px solid #4CAF50; padding: 10px; margin: 10px 0; background: #f9f9f9; }
+        .success { color: green; }
+        .error { color: red; }
+        button { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        input { padding: 8px; margin: 5px; width: 300px; }
+        pre { background: #333; color: #fff; padding: 10px; border-radius: 4px; overflow: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CogniRoom Developer Dashboard</h1>
+        
+        <!-- Login Section -->
+        <div class="card">
+            <h2>1. Authentication</h2>
+            <div class="endpoint">
+                <h3>Login</h3>
+                <input type="email" id="loginEmail" placeholder="Email" value="socket@test.com">
+                <input type="password" id="loginPassword" placeholder="Password" value="pass123">
+                <button onclick="login()">Login</button>
+                <pre id="loginResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Register</h3>
+                <input type="text" id="regName" placeholder="Name">
+                <input type="email" id="regEmail" placeholder="Email">
+                <input type="password" id="regPassword" placeholder="Password">
+                <select id="regRole">
+                    <option value="student">Student</option>
+                    <option value="mentor">Mentor</option>
+                    <option value="admin">Admin</option>
+                </select>
+                <button onclick="register()">Register</button>
+                <pre id="registerResult"></pre>
+            </div>
+        </div>
+
+        <!-- Token Display -->
+        <div class="card" id="tokenSection" style="display:none;">
+            <h2>Access Token</h2>
+            <pre id="tokenDisplay"></pre>
+        </div>
+
+        <!-- Rooms Section -->
+        <div class="card" id="roomsSection" style="display:none;">
+            <h2>2. Room Management</h2>
+            <div class="endpoint">
+                <h3>Create Room</h3>
+                <input type="text" id="roomName" placeholder="Room Name">
+                <input type="text" id="roomSubject" placeholder="Subject">
+                <input type="number" id="roomMax" placeholder="Max Participants" value="4">
+                <button onclick="createRoom()">Create Room</button>
+                <pre id="createRoomResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>My Rooms</h3>
+                <button onclick="listMyRooms()">List My Rooms</button>
+                <pre id="listRoomsResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Join Room by Code</h3>
+                <input type="text" id="joinCode" placeholder="Room Code">
+                <button onclick="joinRoom()">Join Room</button>
+                <pre id="joinRoomResult"></pre>
+            </div>
+        </div>
+
+        <!-- Quizzes Section -->
+        <div class="card" id="quizzesSection" style="display:none;">
+            <h2>3. Quizzes</h2>
+            <div class="endpoint">
+                <h3>Create Quiz</h3>
+                <input type="number" id="quizRoomId" placeholder="Room ID">
+                <input type="text" id="quizTitle" placeholder="Quiz Title">
+                <textarea id="quizQuestions" placeholder="Questions JSON" rows="5">[{"text":"What is 2+2?","options":["3","4","5","6"],"correct_index":1}]</textarea>
+                <button onclick="createQuiz()">Create Quiz</button>
+                <pre id="createQuizResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Get Quiz Stats</h3>
+                <input type="number" id="statsRoomId" placeholder="Room ID">
+                <button onclick="getQuizStats()">Get Stats</button>
+                <pre id="quizStatsResult"></pre>
+            </div>
+        </div>
+
+        <!-- Analytics Section -->
+        <div class="card" id="analyticsSection" style="display:none;">
+            <h2>4. Analytics</h2>
+            <div class="endpoint">
+                <h3>User Analytics</h3>
+                <button onclick="getUserAnalytics()">Get My Analytics</button>
+                <pre id="userAnalyticsResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Room Analytics</h3>
+                <input type="number" id="analyticsRoomId" placeholder="Room ID">
+                <button onclick="getRoomAnalytics()">Get Room Analytics</button>
+                <pre id="roomAnalyticsResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Room Activity</h3>
+                <input type="number" id="activityRoomId" placeholder="Room ID">
+                <button onclick="getRoomActivity()">Get Activity</button>
+                <pre id="roomActivityResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Live Metrics</h3>
+                <input type="number" id="metricsRoomId" placeholder="Room ID">
+                <button onclick="getLiveMetrics()">Get Live Metrics</button>
+                <pre id="liveMetricsResult"></pre>
+            </div>
+        </div>
+
+        <!-- AI Agents Section -->
+        <div class="card" id="aiSection" style="display:none;">
+            <h2>5. AI Agents (Coming Soon)</h2>
+            <div class="endpoint">
+                <h3>Load Balancer Suggestions</h3>
+                <input type="number" id="loadRoomId" placeholder="Room ID">
+                <button onclick="getLoadSuggestions()">Get Suggestions</button>
+                <pre id="loadSuggestionsResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Burnout Sentinel Advice</h3>
+                <input type="number" id="burnoutUserId" placeholder="User ID">
+                <button onclick="getBurnoutAdvice()">Get Advice</button>
+                <pre id="burnoutAdviceResult"></pre>
+            </div>
+            <div class="endpoint">
+                <h3>Performance Oracle Plan</h3>
+                <input type="number" id="planRoomId" placeholder="Room ID">
+                <button onclick="getLearningPlan()">Get Learning Plan</button>
+                <pre id="learningPlanResult"></pre>
+            </div>
+        </div>
+
+        <!-- Webcam Simulation -->
+        <div class="card" id="webcamSection" style="display:none;">
+            <h2>6. Simulate Webcam Load</h2>
+            <div class="endpoint">
+                <h3>Send Load Update</h3>
+                <input type="number" id="loadRoomId" placeholder="Room ID">
+                <input type="number" id="loadUserId" placeholder="User ID">
+                <input type="number" id="loadScore" placeholder="Load Score (0-1)" step="0.1" min="0" max="1">
+                <button onclick="sendLoadUpdate()">Send Update</button>
+                <pre id="loadUpdateResult"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let token = '';
+        const API_URL = 'http://localhost:8000';
+
+        async function apiCall(endpoint, method, body = null) {
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+
+            const options = {
+                method,
+                headers,
+            };
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, options);
+                const data = await response.json();
+                return { ok: response.ok, status: response.status, data };
+            } catch (error) {
+                return { ok: false, error: error.message };
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const result = await apiCall('/auth/login', 'POST', { email, password });
+            
+            if (result.ok) {
+                token = result.data.access_token;
+                document.getElementById('tokenDisplay').textContent = token;
+                document.getElementById('tokenSection').style.display = 'block';
+                document.getElementById('roomsSection').style.display = 'block';
+                document.getElementById('quizzesSection').style.display = 'block';
+                document.getElementById('analyticsSection').style.display = 'block';
+                document.getElementById('aiSection').style.display = 'block';
+                document.getElementById('webcamSection').style.display = 'block';
+            }
+            
+            document.getElementById('loginResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function register() {
+            const name = document.getElementById('regName').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const role = document.getElementById('regRole').value;
+            
+            const result = await apiCall('/auth/register', 'POST', { name, email, password, role });
+            document.getElementById('registerResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function createRoom() {
+            const name = document.getElementById('roomName').value;
+            const result = await apiCall('/rooms', 'POST', { name });
+            document.getElementById('createRoomResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function listMyRooms() {
+            const result = await apiCall('/rooms/my', 'GET');
+            document.getElementById('listRoomsResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function joinRoom() {
+            const code = document.getElementById('joinCode').value;
+            const result = await apiCall(`/rooms/join/${code}`, 'POST');
+            document.getElementById('joinRoomResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function createQuiz() {
+            const roomId = document.getElementById('quizRoomId').value;
+            const title = document.getElementById('quizTitle').value;
+            const questions = JSON.parse(document.getElementById('quizQuestions').value);
+            
+            const result = await apiCall(`/rooms/${roomId}/quizzes`, 'POST', { title, questions });
+            document.getElementById('createQuizResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function getQuizStats() {
+            const roomId = document.getElementById('statsRoomId').value;
+            const result = await apiCall(`/rooms/${roomId}/stats/quiz`, 'GET');
+            document.getElementById('quizStatsResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function getUserAnalytics() {
+            const result = await apiCall('/users/me/analytics', 'GET');
+            document.getElementById('userAnalyticsResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function getRoomAnalytics() {
+            const roomId = document.getElementById('analyticsRoomId').value;
+            const result = await apiCall(`/rooms/${roomId}/analytics`, 'GET');
+            document.getElementById('roomAnalyticsResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function getRoomActivity() {
+            const roomId = document.getElementById('activityRoomId').value;
+            const result = await apiCall(`/analytics/room/${roomId}/activity`, 'GET');
+            document.getElementById('roomActivityResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function getLiveMetrics() {
+            const roomId = document.getElementById('metricsRoomId').value;
+            const result = await apiCall(`/rooms/${roomId}/metrics/live`, 'GET');
+            document.getElementById('liveMetricsResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        async function sendLoadUpdate() {
+            const roomId = document.getElementById('loadRoomId').value;
+            const userId = document.getElementById('loadUserId').value;
+            const loadScore = document.getElementById('loadScore').value;
+            
+            // Simulate Socket.IO event via REST (for testing)
+            const result = await apiCall('/debug/send-load', 'POST', { room_id: roomId, user_id: userId, load_score: loadScore });
+            document.getElementById('loadUpdateResult').textContent = JSON.stringify(result.data || result.error, null, 2);
+        }
+
+        // AI Agent functions (to be implemented)
+        async function getLoadSuggestions() {
+            document.getElementById('loadSuggestionsResult').textContent = 'AI Agents coming soon...';
+        }
+
+        async function getBurnoutAdvice() {
+            document.getElementById('burnoutAdviceResult').textContent = 'AI Agents coming soon...';
+        }
+
+        async function getLearningPlan() {
+            document.getElementById('learningPlanResult').textContent = 'AI Agents coming soon...';
+        }
+    </script>
+</body>
+</html>

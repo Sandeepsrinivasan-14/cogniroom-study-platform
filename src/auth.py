@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timedelta
+from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import User
 import hashlib
+import hmac
 
 SECRET_KEY = "supersecretkey123"
 ALGORITHM = "HS256"
@@ -14,11 +15,16 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 oauth2_scheme = HTTPBearer()
 
 def get_password_hash(password: str) -> str:
-    # Simple SHA256 hash for hackathon/demo (not for production)
+    """Consistent SHA256 hashing for passwords"""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return get_password_hash(plain_password) == hashed_password
+    """Verify password using constant-time comparison to prevent timing attacks"""
+    # Use hmac.compare_digest for constant-time comparison
+    return hmac.compare_digest(
+        get_password_hash(plain_password),
+        hashed_password
+    )
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
