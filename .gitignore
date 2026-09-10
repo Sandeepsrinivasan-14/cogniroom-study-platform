@@ -7,10 +7,18 @@ __pycache__/
 
 # Virtual environment
 venv/
+.venv/
 env/
 ENV/
 env.bak/
 venv.bak/
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
 
 # Docker
 *.pid
@@ -87,7 +95,10 @@ data/
 postgres_data/
 redis_data/
 
-# Backups
+# Backups / scratch
 *.backup
 *.backup*
 *.bak
+*.orig
+*_backup
+*.recursion_backup
