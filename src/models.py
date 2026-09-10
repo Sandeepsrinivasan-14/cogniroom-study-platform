@@ -1,4 +1,4 @@
-﻿from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -19,6 +19,8 @@ class Room(Base):
     name = Column(String, nullable=False)
     code = Column(String, unique=True, index=True, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    agent_memory = Column(JSON, nullable=True)  # shared memory for agents
 
 class RoomMember(Base):
     __tablename__ = "room_members"
@@ -39,6 +41,18 @@ class Event(Base):
     payload = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+# --- Phase 8: Webcam load model ---
+
+class WebcamLoad(Base):
+    __tablename__ = "webcam_loads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    load_score = Column(Float, nullable=False)  # store as float 0.0-1.0
+    sentiment_score = Column(Integer, nullable=True)  # optional sentiment score from audio processing
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
 
 # --- Phase 5: Quiz models ---
 
@@ -48,6 +62,7 @@ class Quiz(Base):
     id = Column(Integer, primary_key=True, index=True)
     room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
     title = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 class Question(Base):
     __tablename__ = "questions"
@@ -55,6 +70,7 @@ class Question(Base):
     id = Column(Integer, primary_key=True, index=True)
     quiz_id = Column(Integer, ForeignKey("quizzes.id"), nullable=False)
     text = Column(String, nullable=False)
+    correct_answer = Column(String, nullable=True)
 
 
 # --- Phase 5B: Quiz attempts ---
@@ -67,6 +83,7 @@ class QuizAttempt(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     score = Column(Integer, nullable=False)
     total_questions = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 class QuestionAnswer(Base):
     __tablename__ = "question_answers"
@@ -76,3 +93,37 @@ class QuestionAnswer(Base):
     question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
     given_answer = Column(String, nullable=False)
     is_correct = Column(Integer, nullable=False)
+
+
+# --- Phase 6: Flashcard models ---
+
+class FlashcardDeck(Base):
+    __tablename__ = "flashcard_decks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    title = Column(String, nullable=False)
+    topic_tag = Column(String, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+class Flashcard(Base):
+    __tablename__ = "flashcards"
+
+    id = Column(Integer, primary_key=True, index=True)
+    deck_id = Column(Integer, ForeignKey("flashcard_decks.id"), nullable=False)
+    front = Column(Text, nullable=False)
+    back = Column(Text, nullable=False)
+
+# --- Phase 7: Scheduler models ---
+
+class ScheduleItem(Base):
+    __tablename__ = "schedule_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    room_id = Column(Integer, ForeignKey("rooms.id"), nullable=False)
+    title = Column(String, nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    duration_minutes = Column(Integer, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

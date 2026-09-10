@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from src.auth import (
     get_password_hash,
     verify_password,
+    needs_rehash,
     create_access_token,
     get_current_user,
 )
@@ -33,6 +34,8 @@ from src.models import (
     Question,
     QuizAttempt,
     QuestionAnswer,
+    FlashcardDeck,
+    Flashcard,
 )
 from src.schemas import (
     UserCreate,
@@ -49,6 +52,10 @@ from src.schemas import (
     AnswerIn,
     QuestionAnswerOut,
     UserLogin,
+    FlashcardDeckCreate,
+    FlashcardDeckOut,
+    FlashcardCreate,
+    FlashcardOut,
 )
 
 from src.analytics_service import get_user_analytics, get_room_analytics
@@ -71,18 +78,24 @@ app = FastAPI(title="StudyRoom Backend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from src.routes import load, schedule, whiteboard, audio, agent
 
+app.include_router(load.router)
+app.include_router(schedule.router)
+app.include_router(whiteboard.router)
+app.include_router(audio.router)
+app.include_router(agent.router)
 # ========== MOUNT SOCKET.IO CORRECTLY - NO RECURSION ==========
 # This is the key fix - mount Socket.IO as a separate ASGI app
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Create Socket.IO ASGI app
-socket_app = socketio.ASGIApp(sio)
+socket_app = socketio.ASGIApp(sio, socketio_path="")
 
 # Mount it at a subpath to avoid recursion
 app.mount("/socket.io", socket_app)
@@ -167,6 +180,14 @@ async def startup_event():
             # Create tables if they don't exist
             Base.metadata.create_all(bind=engine)
             print("? Tables created successfully!")
+            
+            # Helper to add correct_answer column if missing (safe for sqlite)
+            try:
+                db.execute(text("ALTER TABLE questions ADD COLUMN correct_answer VARCHAR"))
+                db.commit()
+                print("Added correct_answer column to questions table")
+            except Exception:
+                db.rollback()
             break
         except Exception as e:
             print(f"DB retry {i+1}/{max_retries}...")
@@ -213,7 +234,15 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
     # Check if user exists and password is correct
     if not user or not verify_password(user_in.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
-    
+
+    # Transparently upgrade legacy (unsalted SHA-256) hashes to bcrypt on login
+    if needs_rehash(user.hashed_password):
+        try:
+            user.hashed_password = get_password_hash(user_in.password)
+            db.commit()
+        except Exception:
+            db.rollback()
+
     # Create access token
     access_token = create_access_token({"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
@@ -398,7 +427,7 @@ async def disconnect(sid):
 
 @sio.event
 async def joinroom(sid, data):
-    room_id = str(data.get("roomid"))
+    room_id = str(data.get("room_id"))
     print(f"joinroom called for sid={sid}, room_id={room_id}")
     await sio.save_session(sid, {"room_id": room_id})
     await sio.enter_room(sid, room=room_id)
@@ -409,8 +438,14 @@ async def chatmessage(sid, data):
     session = await sio.get_session(sid)
     room_id = session.get("room_id")
     message = data.get("message")
+    user_id = data.get("user_id")
     print(f"chatmessage from sid={sid} in room={room_id}: {message}")
-    await sio.emit("chatmessage", {"message": message}, room=room_id)
+    await sio.emit("chatmessage", {"message": message, "user_id": user_id}, room=room_id)
+    await async_log_event(
+        room_id=room_id,
+        event_type="chat_message",
+        payload={"user_id": user_id, "message_length": len(message) if message else 0},
+    )
 
 @sio.event
 async def whiteboard_update(sid, data):
@@ -484,23 +519,8 @@ async def presence_update(sid, data):
     )
 
 # ========== LIVE METRICS ==========
-live_metrics: Dict[int, Dict[int, Dict[str, float]]] = defaultdict(dict)
-
-def update_live_load(room_id: int, user_id: int, load_score: float) -> None:
-    live_metrics[room_id][user_id] = {
-        "load_score": load_score,
-        "ts": time(),
-    }
-
-def cleanup_old_metrics(max_age_seconds: int = 300):
-    """Remove metrics older than max_age_seconds"""
-    current_time = time()
-    for room_id in list(live_metrics.keys()):
-        for user_id in list(live_metrics[room_id].keys()):
-            if current_time - live_metrics[room_id][user_id]["ts"] > max_age_seconds:
-                del live_metrics[room_id][user_id]
-        if not live_metrics[room_id]:
-            del live_metrics[room_id]
+# Uses imported update_live_load, get_room_live_metrics, cleanup_old_metrics
+# from src.live_metrics (Redis-backed with in-memory fallback)
 
 @sio.event
 async def webcam_load_update(sid, data):
@@ -542,35 +562,8 @@ def get_room_live_metrics_endpoint(
     room_id: int,
     current_user: User = Depends(get_current_user),
 ):
-    room_data = live_metrics.get(room_id, {})
-    if not room_data:
-        return {
-            "room_id": room_id,
-            "users": [],
-            "group_avg_load": None,
-            "total_users": 0,
-            "last_updated": None
-        }
-
-    users = []
-    total_load = 0
-    for uid, data in room_data.items():
-        users.append({
-            "user_id": uid,
-            "load_score": data["load_score"],
-            "last_active": datetime.fromtimestamp(data["ts"]).isoformat()
-        })
-        total_load += data["load_score"]
-    
-    group_avg = total_load / len(room_data) if room_data else None
-
-    return {
-        "room_id": room_id,
-        "users": users,
-        "group_avg_load": round(group_avg, 2) if group_avg else None,
-        "total_users": len(users),
-        "last_updated": datetime.now().isoformat()
-    }
+    """Get live cognitive load metrics for a room (Redis-backed)"""
+    return get_room_live_metrics(room_id)
 
 # ========== QUIZ ENDPOINTS ==========
 @app.post("/rooms/{room_id}/quizzes", response_model=QuizOut)
@@ -598,7 +591,7 @@ def create_quiz_for_room(
 
     questions = []
     for q in quiz_in.questions:
-        question = Question(quiz_id=quiz.id, text=q.text)
+        question = Question(quiz_id=quiz.id, text=q.text, correct_answer=q.correct_answer)
         db.add(question)
         questions.append(question)
     db.commit()
@@ -607,7 +600,7 @@ def create_quiz_for_room(
         id=quiz.id,
         room_id=quiz.room_id,
         title=quiz.title,
-        questions=[QuestionOut(id=q.id, text=q.text) for q in questions],
+        questions=[QuestionOut(id=q.id, text=q.text, correct_answer=q.correct_answer) for q in questions],
     )
 
 @app.get("/rooms/{room_id}/quizzes", response_model=list[QuizOut])
@@ -645,7 +638,7 @@ def list_quizzes_for_room(
                 id=quiz.id,
                 room_id=quiz.room_id,
                 title=quiz.title,
-                questions=[QuestionOut(id=qq.id, text=qq.text) for qq in qs],
+                questions=[QuestionOut(id=qq.id, text=qq.text, correct_answer=qq.correct_answer) for qq in qs],
             )
         )
     return result
@@ -680,18 +673,20 @@ def create_quiz_attempt(
         question = questions_by_id.get(ans.question_id)
         if not question:
             continue
-        # Simple correct answer check (in production, use actual correct_answer field)
-        is_correct = True if ans.answer else False
+        # Validate correct answer if it exists
+        if question.correct_answer and ans.answer:
+            is_correct = 1 if ans.answer.strip().lower() == question.correct_answer.strip().lower() else 0
+        else:
+            is_correct = 1 if ans.answer else 0
+            
         qa = QuestionAnswer(
             question_id=question.id,
-            user_id=current_user.id,
             given_answer=ans.answer,
             is_correct=is_correct,
         )
         answer_rows.append(qa)
         if is_correct:
             correct += 1
-        db.add(qa)
 
         try:
             log_event(
@@ -703,8 +698,6 @@ def create_quiz_attempt(
             )
         except Exception:
             pass
-
-    db.commit()
 
     try:
         log_event(
@@ -1030,8 +1023,29 @@ def ml_engagement_score(body: EngagementScoreRequest):
     try:
         rows = db.query(Event.type, func.count(Event.id).label("count")).filter(Event.payload.like(f"%user_id={body.user_id}%")).group_by(Event.type).all()
         counts = {row.type: row.count for row in rows}
-        base = counts.get("quiz_started", 0) + counts.get("question_answered", 0) + counts.get("webcam_load_update", 0)
-        score = min(1.0, base / 10.0)
+        
+        score = 0.0
+        import os, joblib
+        import pandas as pd
+        
+        model_path = os.path.join("ml", "engagement_model.pkl")
+        if os.path.exists(model_path):
+            try:
+                model = joblib.load(model_path)
+                df = pd.DataFrame([{
+                    "count_quiz_started": counts.get("quiz_started", 0),
+                    "count_question_answered": counts.get("question_answered", 0),
+                    "count_webcam_load_update": counts.get("webcam_load_update", 0)
+                }])
+                score = float(model.predict_proba(df)[0][1])
+            except Exception as e:
+                print(f"Error loading/predicting with ML model: {e}")
+                base = counts.get("quiz_started", 0) + counts.get("question_answered", 0) + counts.get("webcam_load_update", 0)
+                score = min(1.0, base / 10.0)
+        else:
+            base = counts.get("quiz_started", 0) + counts.get("question_answered", 0) + counts.get("webcam_load_update", 0)
+            score = min(1.0, base / 10.0)
+            
         return EngagementScoreResponse(
             user_id=body.user_id,
             score=score,
@@ -1053,11 +1067,15 @@ class QuizGenQuestion(BaseModel):
 class QuizGenResponse(BaseModel):
     questions: list[QuizGenQuestion]
 
+class LLMNotConfigured(RuntimeError):
+    """Raised when the external LLM provider env vars are not set."""
+
+
 def call_llm_quiz(prompt: str) -> str:
     base_url = os.getenv("LLM_BASE_URL")
     api_key = os.getenv("LLM_API_KEY")
     if not base_url or not api_key:
-        raise RuntimeError("LLM_BASE_URL or LLM_API_KEY not set")
+        raise LLMNotConfigured("LLM_BASE_URL or LLM_API_KEY not set")
 
     payload = {
         "model": "gpt-4.1-mini",
@@ -1095,7 +1113,15 @@ def llm_quiz_generate(
         f"with difficulty {body.difficulty}. "
         f"Each line must be: question || answer."
     )
-    text = call_llm_quiz(prompt)
+    try:
+        text = call_llm_quiz(prompt)
+    except LLMNotConfigured:
+        raise HTTPException(
+            status_code=503,
+            detail="AI quiz generation is not configured on this server (set LLM_BASE_URL and LLM_API_KEY).",
+        )
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"LLM provider request failed: {e}")
     questions = []
     for line in text.splitlines():
         if "||" not in line:
@@ -1194,6 +1220,96 @@ def get_admin_overview(
             "events": {"total": 0},
             "engagement": {"global_avg_focus_score": 0, "high_risk_users": 0, "high_risk_percentage": 0}
         }
+
+# ========== FLASHCARD ENDPOINTS ==========
+@app.post("/rooms/{room_id}/flashcards/decks", response_model=FlashcardDeckOut)
+def create_flashcard_deck(
+    room_id: int,
+    deck_in: FlashcardDeckCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a flashcard deck in a room"""
+    membership = db.query(RoomMember).filter(
+        RoomMember.room_id == room_id,
+        RoomMember.user_id == current_user.id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this room")
+
+    deck = FlashcardDeck(
+        room_id=room_id,
+        title=deck_in.title,
+        topic_tag=deck_in.topic_tag,
+        created_by=current_user.id,
+    )
+    db.add(deck)
+    db.commit()
+    db.refresh(deck)
+
+    cards = []
+    for fc in deck_in.flashcards:
+        card = Flashcard(deck_id=deck.id, front=fc.front, back=fc.back)
+        db.add(card)
+        cards.append(card)
+    db.commit()
+
+    return FlashcardDeckOut(
+        id=deck.id,
+        room_id=deck.room_id,
+        title=deck.title,
+        topic_tag=deck.topic_tag,
+        created_by=deck.created_by,
+        flashcards=[FlashcardOut(id=c.id, front=c.front, back=c.back) for c in cards],
+    )
+
+@app.get("/rooms/{room_id}/flashcards/decks", response_model=list[FlashcardDeckOut])
+def list_flashcard_decks(
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all flashcard decks in a room"""
+    membership = db.query(RoomMember).filter(
+        RoomMember.room_id == room_id,
+        RoomMember.user_id == current_user.id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this room")
+
+    decks = db.query(FlashcardDeck).filter(FlashcardDeck.room_id == room_id).all()
+    result = []
+    for deck in decks:
+        cards = db.query(Flashcard).filter(Flashcard.deck_id == deck.id).all()
+        result.append(FlashcardDeckOut(
+            id=deck.id,
+            room_id=deck.room_id,
+            title=deck.title,
+            topic_tag=deck.topic_tag,
+            created_by=deck.created_by,
+            flashcards=[FlashcardOut(id=c.id, front=c.front, back=c.back) for c in cards],
+        ))
+    return result
+
+@app.get("/flashcards/decks/{deck_id}", response_model=FlashcardDeckOut)
+def get_flashcard_deck(
+    deck_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get a specific flashcard deck"""
+    deck = db.query(FlashcardDeck).filter(FlashcardDeck.id == deck_id).first()
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    cards = db.query(Flashcard).filter(Flashcard.deck_id == deck.id).all()
+    return FlashcardDeckOut(
+        id=deck.id,
+        room_id=deck.room_id,
+        title=deck.title,
+        topic_tag=deck.topic_tag,
+        created_by=deck.created_by,
+        flashcards=[FlashcardOut(id=c.id, front=c.front, back=c.back) for c in cards],
+    )
 
 # ========== DEVELOPER DASHBOARD ==========
 @app.get("/dev", response_class=HTMLResponse)

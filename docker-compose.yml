@@ -1,11 +1,10 @@
-version: '3.8'
 services:
   db:
     image: postgres:15
     environment:
       POSTGRES_DB: studyroom
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     ports:
       - "5433:5432"
     volumes:
@@ -28,11 +27,19 @@ services:
     depends_on:
       - db
       - redis
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgresql://postgres:password@db:5432/studyroom
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-password}@db:5432/studyroom
       REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: supersecretkey123
-      DEBUG: true
+      # Must be provided via .env (or the shell). No default: fail fast if missing.
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set - see .env.example}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OLLAMA_PRIMARY_MODEL: ${OLLAMA_PRIMARY_MODEL:-deepseek-r1:8b}
+      OLLAMA_FALLBACK_MODEL: ${OLLAMA_FALLBACK_MODEL:-tinyllama}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      DEBUG: "true"
 
 volumes:
   postgres_data:

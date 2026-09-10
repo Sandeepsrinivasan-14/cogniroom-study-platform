@@ -2,7 +2,7 @@ import json
 import requests
 from typing import Dict, List, Any
 from sqlalchemy.orm import Session
-from .models import Event, User, Room, QuizAttempt
+from src.models import Event, User, Room, QuizAttempt
 from .analytics_service import get_user_analytics, get_room_analytics
 import time
 

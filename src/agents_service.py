@@ -13,17 +13,18 @@ class AgentService:
     def __init__(self, db: Session):
         self.db = db
         # Primary model: deepseek-r1:8b (excellent for reasoning)
-        self.primary_model = "deepseek-r1:8b"
+        self.primary_model = os.getenv("OLLAMA_PRIMARY_MODEL", "deepseek-r1:8b")
         # Fallback model: tinyllama (ultra fast, small footprint)
-        self.fallback_model = "tinyllama"
-        self.ollama_url = "http://172.26.96.1:11434"
+        self.fallback_model = os.getenv("OLLAMA_FALLBACK_MODEL", "tinyllama")
+        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         
         # Track which model we're using
         self.current_model = self.primary_model
         self.fallback_count = 0
         self.max_fallbacks = 3  # After 3 fallbacks, try primary again
         
-        print(f"?? AI Agent Service initialized")
+        print("[AI] Agent Service initialized")
+        print(f"   Ollama URL: {self.ollama_url}")
         print(f"   Primary: {self.primary_model}")
         print(f"   Fallback: {self.fallback_model}")
     

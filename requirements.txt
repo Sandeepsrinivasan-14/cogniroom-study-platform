@@ -1,4 +1,4 @@
-﻿fastapi==0.104.1
+fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 psycopg2-binary==2.9.9
@@ -8,6 +8,9 @@ python-multipart==0.0.6
 alembic==1.13.1
 jinja2==3.1.2
 requests
+python-dotenv==1.0.1
+pillow==10.4.0
+bcrypt==4.2.0
 
 
 python-socketio==5.11.2
@@ -16,7 +19,9 @@ aiohttp==3.9.5
 websockets==12.0
 
 # ML dependencies
-scikit-learn==1.3.0
+# Pinned exactly: the committed *.pkl models are loaded with these versions.
+# If you bump either, retrain and re-commit the models (see src/ml/train_*.py).
+scikit-learn==1.8.0
 xgboost==2.0.0
 pandas==2.0.3
 numpy==1.24.3

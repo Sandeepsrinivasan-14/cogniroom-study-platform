@@ -45,13 +45,21 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# ML models (too large for git)
+# ML models (large binaries) — ignore by default...
 *.pkl
 *.h5
 *.joblib
 ml/models/*.pkl
 ml/models/*.h5
 ml/models/*.joblib
+
+# ...but DO commit the trained models the app loads at runtime.
+# Retrain with: python -m src.ml.train_burnout_balanced (etc). Keep in sync
+# with the pinned scikit-learn/numpy in requirements.txt.
+!src/ml/burnout_model.pkl
+!src/ml/burnout_model_balanced.pkl
+!src/ml/performance_model_balanced.pkl
+!ml/engagement_model.pkl
 
 # Environment variables
 .env
@@ -65,6 +73,15 @@ ml/models/*.joblib
 *.npy
 *.npz
 data/
+
+# ...but keep the small ML mappings + training data the models need.
+!src/ml/burnout_features.json
+!src/ml/risk_mapping.json
+!src/ml/grade_mapping.json
+!src/ml/sessions_balanced.csv
+!ml/user_features.csv
+!**/package.json
+!**/package-lock.json
 
 # Docker volumes
 postgres_data/

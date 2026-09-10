@@ -68,92 +68,105 @@ class MLService:
                 with open(grade_path, 'r') as f:
                     self.grade_mapping = json.load(f)
                     self.reverse_grade_mapping = {v: k for k, v in self.grade_mapping.items()}
-            
-            self.models_loaded = True
-            
+
+            # Only report models as loaded if they can actually run a prediction
+            # with the installed numpy/scikit-learn. A pickle produced by a
+            # different library version often imports fine but raises on predict;
+            # in that case we must fall back to heuristics honestly.
+            self.models_loaded = self._self_test()
+
         except Exception as e:
-            print(f"?? Error loading models: {e}")
+            print(f"[WARN] Error loading ML models, falling back to heuristics: {e}")
             self.models_loaded = False
+
+    def _self_test(self) -> bool:
+        """Run a throwaway prediction against each model to verify compatibility."""
+        sample = {
+            "start_hour": 14, "duration_minutes": 90, "late_night": 0,
+            "avg_load": 0.5, "max_load": 0.7, "load_variance": 0.02,
+            "has_quiz": 1, "message_count": 5, "whiteboard_actions": 3,
+            "quiz_score": 60,
+        }
+        ok = True
+        if self.burnout_model is not None:
+            try:
+                self._raw_predict_burnout(sample)
+            except Exception as e:
+                print(f"[WARN] burnout model incompatible with installed libs: {e}")
+                self.burnout_model = None
+                ok = False
+        if self.performance_model is not None:
+            try:
+                self._raw_predict_performance(sample)
+            except Exception as e:
+                print(f"[WARN] performance model incompatible with installed libs: {e}")
+                self.performance_model = None
+                ok = False
+        return ok
     
-    def predict_burnout(self, features: Dict[str, Any]) -> Tuple[str, float]:
+    _PERF_FEATURE_COLS = [
+        'avg_load', 'max_load', 'load_variance',
+        'duration_minutes', 'late_night', 'has_quiz',
+        'message_count', 'whiteboard_actions',
+    ]
+
+    def _raw_predict_burnout(self, features: Dict[str, Any]) -> Tuple[str, float]:
+        """Run the burnout model. Raises if the model/libs are incompatible."""
+        cols = self.burnout_features or [
+            'start_hour', 'duration_minutes', 'late_night', 'avg_load', 'max_load',
+            'load_variance', 'has_quiz', 'message_count', 'whiteboard_actions',
+        ]
+        X = pd.DataFrame([[features.get(f, 0) for f in cols]], columns=cols)
+        proba = self.burnout_model.predict_proba(X)[0]
+        pred_class = int(np.argmax(proba))
+        confidence = float(proba[pred_class])
+        if self.reverse_risk_mapping:
+            risk_level = self.reverse_risk_mapping.get(pred_class, 'low')
+        else:
+            risk_level = {0: 'low', 1: 'medium', 2: 'high'}.get(pred_class, 'low')
+        return risk_level, confidence
+
+    def _raw_predict_performance(self, features: Dict[str, Any]) -> Tuple[str, float]:
+        """Run the performance model. Raises if the model/libs are incompatible."""
+        cols = self._PERF_FEATURE_COLS
+        X = pd.DataFrame([[features.get(f, 0) for f in cols]], columns=cols)
+        proba = self.performance_model.predict_proba(X)[0]
+        pred_class = int(np.argmax(proba))
+        confidence = float(proba[pred_class])
+        if self.reverse_grade_mapping:
+            grade = self.reverse_grade_mapping.get(pred_class, 'B')
+        else:
+            grade = {0: 'D', 1: 'C', 2: 'B', 3: 'A'}.get(pred_class, 'B')
+        return grade, confidence
+
+    def predict_burnout(self, features: Dict[str, Any]) -> Tuple[str, float, str]:
         """
-        Predict burnout risk from user features
-        Returns: (risk_level, confidence)
+        Predict burnout risk from user features.
+        Returns: (risk_level, confidence, source) where source is
+        "ml_model" or "heuristic".
         """
-        if not self.models_loaded or not self.burnout_model:
-            return self._heuristic_burnout(features), 0.5
-        
-        try:
-            # Prepare feature vector
-            if not self.burnout_features:
-                return self._heuristic_burnout(features), 0.5
-            
-            feature_vector = []
-            for f in self.burnout_features:
-                feature_vector.append(features.get(f, 0))
-            
-            # Predict
-            X = pd.DataFrame([feature_vector], columns=self.burnout_features)
-            
-            # Get probabilities
-            proba = self.burnout_model.predict_proba(X)[0]
-            
-            # Get prediction and confidence
-            pred_class = np.argmax(proba)
-            confidence = proba[pred_class]
-            
-            # Map to labels
-            if self.reverse_risk_mapping:
-                risk_level = self.reverse_risk_mapping.get(pred_class, 'low')
-            else:
-                risk_map = {0: 'low', 1: 'medium', 2: 'high'}
-                risk_level = risk_map.get(pred_class, 'low')
-            
-            return risk_level, float(confidence)
-            
-        except Exception as e:
-            print(f"?? Burnout prediction error: {e}")
-            return self._heuristic_burnout(features), 0.3
-    
-    def predict_performance(self, features: Dict[str, Any]) -> Tuple[str, float]:
+        if self.models_loaded and self.burnout_model is not None:
+            try:
+                risk_level, confidence = self._raw_predict_burnout(features)
+                return risk_level, confidence, "ml_model"
+            except Exception as e:
+                print(f"[WARN] Burnout prediction failed, using heuristic: {e}")
+        return self._heuristic_burnout(features), 0.5, "heuristic"
+
+    def predict_performance(self, features: Dict[str, Any]) -> Tuple[str, float, str]:
         """
-        Predict performance grade
-        Returns: (grade, confidence)
+        Predict performance grade.
+        Returns: (grade, confidence, source) where source is
+        "ml_model" or "heuristic".
         """
-        if not self.models_loaded or not self.performance_model:
-            return self._heuristic_performance(features), 0.5
-        
-        try:
-            # Prepare features
-            feature_cols = [
-                'avg_load', 'max_load', 'load_variance',
-                'duration_minutes', 'late_night', 'has_quiz',
-                'message_count', 'whiteboard_actions'
-            ]
-            
-            feature_vector = []
-            for f in feature_cols:
-                feature_vector.append(features.get(f, 0))
-            
-            # Predict
-            X = pd.DataFrame([feature_vector], columns=feature_cols)
-            proba = self.performance_model.predict_proba(X)[0]
-            pred_class = np.argmax(proba)
-            confidence = proba[pred_class]
-            
-            # Map to grade
-            if self.reverse_grade_mapping:
-                grade = self.reverse_grade_mapping.get(pred_class, 'B')
-            else:
-                grade_map = {0: 'D', 1: 'C', 2: 'B', 3: 'A'}
-                grade = grade_map.get(pred_class, 'B')
-            
-            return grade, float(confidence)
-            
-        except Exception as e:
-            print(f"?? Performance prediction error: {e}")
-            return self._heuristic_performance(features), 0.3
-    
+        if self.models_loaded and self.performance_model is not None:
+            try:
+                grade, confidence = self._raw_predict_performance(features)
+                return grade, confidence, "ml_model"
+            except Exception as e:
+                print(f"[WARN] Performance prediction failed, using heuristic: {e}")
+        return self._heuristic_performance(features), 0.5, "heuristic"
+
     def _heuristic_burnout(self, features: Dict[str, Any]) -> str:
         """Fallback heuristic when model not available"""
         risk_score = 0
