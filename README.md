@@ -174,7 +174,8 @@ Starts the backend (`:8000`), PostgreSQL (`:5433`), and Redis (`:6379`).
 | `SECRET_KEY` | yes | JWT signing key |
 | `DATABASE_URL` | no | defaults to `sqlite:///./studyroom.db` |
 | `DEBUG` | no | `true` enables the ephemeral-key dev fallback |
-| `REDIS_URL` | no | live metrics; falls back to no-op without it |
+| `CORS_ORIGINS` | prod | comma-separated browser origins allowed by CORS and Socket.IO; defaults to local dev servers only |
+| `REDIS_URL` | no | live metrics (stored as JSON); falls back to no-op without it |
 | `OLLAMA_URL`, `OLLAMA_PRIMARY_MODEL`, `OLLAMA_FALLBACK_MODEL` | no | local LLM advisor |
 | `LLM_BASE_URL`, `LLM_API_KEY` | no | OpenAI-compatible endpoint for `/llm/quiz/generate` (returns `503` until both are set) |
 

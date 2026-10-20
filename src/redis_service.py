@@ -5,7 +5,6 @@ Redis Service for caching and real-time data
 import redis
 import json
 import os
-import pickle
 from typing import Dict, Any, Optional
 
 class RedisService:
@@ -34,7 +33,7 @@ class RedisService:
         self.client.hset(
             key,
             str(user_id),
-            pickle.dumps({"load_score": load_score, "ts": ts})
+            json.dumps({"load_score": load_score, "ts": ts})
         )
         # Set expiry (10 minutes)
         self.client.expire(key, 600)
@@ -51,7 +50,7 @@ class RedisService:
         for user_id_bytes, value_bytes in data.items():
             try:
                 user_id = int(user_id_bytes.decode())
-                value = pickle.loads(value_bytes)
+                value = json.loads(value_bytes)
                 result[user_id] = value
             except:
                 continue
