@@ -226,4 +226,4 @@ python tests/harsh_test.py      # end-to-end happy-path smoke test
 
 ## License
 
-Educational project.
+MIT. See [LICENSE](LICENSE).
