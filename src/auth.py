@@ -53,6 +53,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not hashed_password:
         return False
     if _looks_like_bcrypt(hashed_password):
+        # A real bcrypt hash is always 60 chars. bcrypt 4.x panics (not ValueError) on
+        # truncated hashes, which would turn a corrupted DB value into a 500 on login.
+        if len(hashed_password) != 60:
+            return False
         try:
             return bcrypt.checkpw(
                 plain_password.encode("utf-8"), hashed_password.encode("utf-8")
