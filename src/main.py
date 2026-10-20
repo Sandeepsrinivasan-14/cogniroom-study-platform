@@ -63,9 +63,20 @@ from src.live_metrics import get_room_live_metrics, update_live_load, cleanup_ol
 
 # ========== SOCKET.IO SETUP - CRITICAL FIX ==========
 # Create Socket.IO server
+def _cors_origins() -> List[str]:
+    """Allowed browser origins, from CORS_ORIGINS (comma-separated).
+
+    Defaults to the local dev servers only; set CORS_ORIGINS explicitly in production.
+    """
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000")
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+CORS_ORIGINS = _cors_origins()
+
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",
+    cors_allowed_origins=CORS_ORIGINS,
     max_http_buffer_size=10**7,
     ping_timeout=60,
     ping_interval=25
@@ -77,7 +88,7 @@ app = FastAPI(title="StudyRoom Backend")
 # Add CORS middleware to FastAPI (ONCE)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
